@@ -1,0 +1,45 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+passbook
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+*.prof
+
+# Go workspace
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Documentation
+docs/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build output
+bin/
+dist/
