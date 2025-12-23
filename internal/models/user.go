@@ -24,6 +24,24 @@ type User struct {
 
 	// User's assigned roles
 	Roles []Role `json:"roles" yaml:"roles"`
+
+	// Metadata for additional user properties
+	Metadata map[string]string `json:"metadata,omitempty" yaml:"metadata,omitempty"`
+}
+
+// IsPendingVerification checks if user is awaiting key verification
+func (u *User) IsPendingVerification() bool {
+	if u.Metadata == nil {
+		return false
+	}
+	return u.Metadata["verification_pending"] == "true"
+}
+
+// SetVerified marks the user as verified
+func (u *User) SetVerified() {
+	if u.Metadata != nil {
+		delete(u.Metadata, "verification_pending")
+	}
 }
 
 // CanAccessStage checks if user can access a specific stage

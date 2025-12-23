@@ -2,118 +2,22 @@ package action
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/urfave/cli/v2"
 
 	"passbook/internal/auth"
-	"passbook/pkg/termio"
 )
-
-// Login authenticates the user via magic link
-func (a *Action) Login(c *cli.Context) error {
-	fmt.Println("Login to Passbook")
-	fmt.Println("-----------------")
-
-	// Check if already logged in
-	if a.auth != nil && a.auth.IsLoggedIn() {
-		session, _ := a.auth.GetCurrentSession()
-		fmt.Printf("Already logged in as %s\n", session.Email)
-		confirm, err := termio.Confirm("Do you want to log in as a different user?", false)
-		if err != nil {
-			return err
-		}
-		if !confirm {
-			return nil
-		}
-		// Logout first
-		_ = a.auth.Logout()
-	}
-
-	// Prompt for email
-	email, err := termio.Prompt("Email: ")
-	if err != nil {
-		return err
-	}
-	email = strings.TrimSpace(strings.ToLower(email))
-
-	if email == "" {
-		return fmt.Errorf("email is required")
-	}
-
-	// Validate email format
-	if !strings.Contains(email, "@") {
-		return fmt.Errorf("invalid email format")
-	}
-
-	// Check domain restriction
-	if !a.cfg.IsAllowedEmail(email) {
-		return fmt.Errorf("email domain not allowed (must be @%s)", a.cfg.Org.AllowedDomain)
-	}
-
-	fmt.Printf("\nSending verification code to %s...\n", email)
-
-	// Request login (sends verification code)
-	if err := a.auth.RequestLogin(email); err != nil {
-		if err == auth.ErrInvalidDomain {
-			return fmt.Errorf("email domain not allowed")
-		}
-		return fmt.Errorf("failed to send verification code: %w", err)
-	}
-
-	// Prompt for verification code
-	fmt.Println("\nCheck your email for the verification code.")
-	code, err := termio.Prompt("Verification code: ")
-	if err != nil {
-		return err
-	}
-	code = strings.TrimSpace(strings.ToUpper(code))
-
-	if code == "" {
-		return fmt.Errorf("verification code is required")
-	}
-
-	// Verify the code
-	session, err := a.auth.VerifyLogin(email, code)
-	if err != nil {
-		if err == auth.ErrTokenInvalid {
-			return fmt.Errorf("invalid verification code")
-		}
-		if err == auth.ErrTokenExpired {
-			return fmt.Errorf("verification code expired")
-		}
-		return fmt.Errorf("verification failed: %w", err)
-	}
-
-	fmt.Printf("\n✓ Logged in as %s\n", session.Email)
-	return nil
-}
-
-// Logout clears the user's session
-func (a *Action) Logout(c *cli.Context) error {
-	// Get current user from identity (consistent with whoami)
-	user, err := a.getCurrentUser()
-	if err != nil {
-		fmt.Println("Not logged in (no matching user found)")
-		return nil
-	}
-
-	// Clear any session data
-	if a.auth != nil {
-		_ = a.auth.Logout()
-	}
-
-	fmt.Printf("✓ Cleared session for %s\n", user.Email)
-	fmt.Println()
-	fmt.Println("Note: Your identity key is still active.")
-	fmt.Println("To switch users, configure a different identity file.")
-	return nil
-}
 
 // WhoAmI shows the current user
 func (a *Action) WhoAmI(c *cli.Context) error {
 	fmt.Println("Current User")
 	fmt.Println("============")
+
+	// Check GitHub auth status
+	githubAuth := auth.NewGitHubAuth(a.cfg.ConfigDir, a.cfg.Org.AllowedDomain)
+	if session, err := githubAuth.LoadSession(); err == nil && session != nil {
+		fmt.Printf("GitHub:     @%s (%s)\n", session.GitHubLogin, session.Email)
+	}
 
 	// Try to get user from team list (by public key)
 	user, err := a.getCurrentUser()
@@ -144,17 +48,6 @@ func (a *Action) WhoAmI(c *cli.Context) error {
 		return nil
 	}
 
-	// Fall back to session info if available
-	if a.auth != nil {
-		session, err := a.auth.GetCurrentSession()
-		if err == nil {
-			fmt.Printf("Email:      %s\n", session.Email)
-			fmt.Printf("Logged in:  %s\n", session.CreatedAt.Format("2006-01-02 15:04:05"))
-			fmt.Printf("Expires:    %s\n", session.ExpiresAt.Format("2006-01-02 15:04:05"))
-			return nil
-		}
-	}
-
 	// Just show identity info
 	if a.cfg.Identity.PublicKey != "" {
 		key := a.cfg.Identity.PublicKey
@@ -162,11 +55,86 @@ func (a *Action) WhoAmI(c *cli.Context) error {
 			key = key[:30] + "..."
 		}
 		fmt.Printf("Public Key: %s\n", key)
-		fmt.Println("\nNote: Run 'passbook login' to associate with an email")
+		fmt.Println("\nYour key is not in the team yet.")
+		fmt.Println("Ask an admin to invite you, or run 'passbook init' to start a new store.")
 		return nil
 	}
 
 	fmt.Println("Not configured")
 	fmt.Println("\nRun 'passbook init' or 'passbook clone' to get started")
+	return nil
+}
+
+// Login authenticates with GitHub
+func (a *Action) Login(c *cli.Context) error {
+	githubAuth := auth.NewGitHubAuth(a.cfg.ConfigDir, a.cfg.Org.AllowedDomain)
+
+	session, err := githubAuth.Authenticate()
+	if err != nil {
+		switch err {
+		case auth.ErrEmailNotVerified:
+			return fmt.Errorf("your GitHub email is not verified. Please verify your email at github.com")
+		case auth.ErrEmailDomainMismatch:
+			return fmt.Errorf("no verified email matching domain @%s found in your GitHub account", a.cfg.Org.AllowedDomain)
+		case auth.ErrAccessDenied:
+			return fmt.Errorf("authentication was denied")
+		case auth.ErrExpiredToken:
+			return fmt.Errorf("authentication timed out. Please try again")
+		default:
+			return fmt.Errorf("authentication failed: %w", err)
+		}
+	}
+
+	fmt.Println("Logged in successfully!")
+	fmt.Println()
+	fmt.Print(session.PrettyPrint())
+
+	// Update user config with email if not set
+	if a.cfg.Identity.Email == "" {
+		a.cfg.Identity.Email = session.Email
+		if err := a.cfg.Save(); err != nil {
+			fmt.Printf("Warning: failed to save email to config: %v\n", err)
+		}
+	}
+
+	return nil
+}
+
+// Logout clears the GitHub session
+func (a *Action) Logout(c *cli.Context) error {
+	githubAuth := auth.NewGitHubAuth(a.cfg.ConfigDir, a.cfg.Org.AllowedDomain)
+
+	if err := githubAuth.ClearSession(); err != nil {
+		return fmt.Errorf("failed to logout: %w", err)
+	}
+
+	fmt.Println("Logged out successfully")
+	return nil
+}
+
+// AuthStatus shows authentication status
+func (a *Action) AuthStatus(c *cli.Context) error {
+	githubAuth := auth.NewGitHubAuth(a.cfg.ConfigDir, a.cfg.Org.AllowedDomain)
+
+	session, err := githubAuth.LoadSession()
+	if err != nil {
+		fmt.Println("Not authenticated")
+		fmt.Println()
+		fmt.Println("Run 'passbook login' to authenticate with GitHub")
+		return nil
+	}
+
+	// Verify session is still valid
+	if !githubAuth.IsAuthenticated() {
+		fmt.Println("Session expired")
+		fmt.Println()
+		fmt.Println("Run 'passbook login' to re-authenticate")
+		return nil
+	}
+
+	fmt.Println("Authenticated")
+	fmt.Println()
+	fmt.Print(session.PrettyPrint())
+
 	return nil
 }

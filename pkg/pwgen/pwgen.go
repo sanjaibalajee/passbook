@@ -2,6 +2,7 @@ package pwgen
 
 import (
 	"crypto/rand"
+	"math"
 	"math/big"
 	"strings"
 )
@@ -251,34 +252,5 @@ func Entropy(password string) float64 {
 	}
 
 	// Entropy = log2(poolSize^length) = length * log2(poolSize)
-	return float64(len(password)) * log2(float64(poolSize))
-}
-
-// log2 calculates log base 2
-func log2(x float64) float64 {
-	// Using change of base formula: log2(x) = ln(x) / ln(2)
-	// ln(2) ≈ 0.693147
-	if x <= 0 {
-		return 0
-	}
-	return ln(x) / 0.693147
-}
-
-// ln calculates natural log using Taylor series
-func ln(x float64) float64 {
-	if x <= 0 {
-		return 0
-	}
-	// For x close to 1, use: ln(x) = 2 * (y + y^3/3 + y^5/5 + ...) where y = (x-1)/(x+1)
-	// For other x, normalize to [0.5, 2] range
-
-	// Simple approximation for our use case
-	result := 0.0
-	term := (x - 1) / (x + 1)
-	termSq := term * term
-	for i := 1; i <= 50; i += 2 {
-		result += term / float64(i)
-		term *= termSq
-	}
-	return 2 * result
+	return float64(len(password)) * math.Log2(float64(poolSize))
 }

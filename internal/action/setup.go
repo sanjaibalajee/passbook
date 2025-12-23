@@ -498,13 +498,19 @@ func (a *Action) initWithArgs(org, domain, remote string) error {
 			fmt.Println("FAILED")
 			return err
 		}
-		os.WriteFile(filepath.Join(storePath, dir, ".gitkeep"), []byte(""), 0600)
+		if err := os.WriteFile(filepath.Join(storePath, dir, ".gitkeep"), []byte(""), 0600); err != nil {
+			fmt.Println("FAILED")
+			return err
+		}
 	}
 	fmt.Println("OK")
 
 	// Create .gitignore
 	fmt.Print("Creating .gitignore... ")
-	os.WriteFile(filepath.Join(storePath, ".gitignore"), []byte("*.local\n*.tmp\n"), 0600)
+	if err := os.WriteFile(filepath.Join(storePath, ".gitignore"), []byte("*.local\n*.tmp\n"), 0600); err != nil {
+		fmt.Println("FAILED")
+		return err
+	}
 	fmt.Println("OK")
 
 	// Initial commit

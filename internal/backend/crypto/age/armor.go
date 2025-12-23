@@ -1,48 +1,28 @@
 package age
 
 import (
-	"bufio"
 	"bytes"
-	"encoding/base64"
-	"fmt"
 	"io"
-	"strings"
+
+	"filippo.io/age/armor"
 )
 
-const (
-	armorHeader = "-----BEGIN AGE ENCRYPTED FILE-----"
-	armorFooter = "-----END AGE ENCRYPTED FILE-----"
-	lineLength  = 64
-)
-
-// ArmorWriter wraps a writer to produce ASCII-armored output
+// ArmorWriter wraps age's built-in armor writer
+// Deprecated: Use armor.NewWriter from filippo.io/age/armor directly
 type ArmorWriter struct {
-	w       io.Writer
-	buf     bytes.Buffer
-	started bool
-	closed  bool
+	w      io.WriteCloser
+	closed bool
 }
 
-// NewArmorWriter creates a new armor writer
+// NewArmorWriter creates a new armor writer using age's built-in armor
+// Deprecated: Use armor.NewWriter from filippo.io/age/armor directly
 func NewArmorWriter(w io.Writer) *ArmorWriter {
-	return &ArmorWriter{w: w}
+	return &ArmorWriter{w: armor.NewWriter(w)}
 }
 
 // Write implements io.Writer
 func (a *ArmorWriter) Write(p []byte) (int, error) {
-	if a.closed {
-		return 0, io.ErrClosedPipe
-	}
-
-	if !a.started {
-		if _, err := fmt.Fprintln(a.w, armorHeader); err != nil {
-			return 0, err
-		}
-		a.started = true
-	}
-
-	// Buffer the raw data
-	return a.buf.Write(p)
+	return a.w.Write(p)
 }
 
 // Close finishes the armored output
@@ -51,92 +31,28 @@ func (a *ArmorWriter) Close() error {
 		return nil
 	}
 	a.closed = true
-
-	if !a.started {
-		if _, err := fmt.Fprintln(a.w, armorHeader); err != nil {
-			return err
-		}
-	}
-
-	// Encode and write in lines
-	encoded := base64.StdEncoding.EncodeToString(a.buf.Bytes())
-
-	for i := 0; i < len(encoded); i += lineLength {
-		end := i + lineLength
-		if end > len(encoded) {
-			end = len(encoded)
-		}
-		if _, err := fmt.Fprintln(a.w, encoded[i:end]); err != nil {
-			return err
-		}
-	}
-
-	_, err := fmt.Fprintln(a.w, armorFooter)
-	return err
+	return a.w.Close()
 }
 
-// ArmorReader reads ASCII-armored age files
+// ArmorReader wraps age's built-in armor reader
+// Deprecated: Use armor.NewReader from filippo.io/age/armor directly
 type ArmorReader struct {
-	r    io.Reader
-	buf  *bytes.Reader
-	done bool
+	r io.Reader
 }
 
-// NewArmorReader creates a new armor reader
+// NewArmorReader creates a new armor reader using age's built-in armor
+// Deprecated: Use armor.NewReader from filippo.io/age/armor directly
 func NewArmorReader(r io.Reader) *ArmorReader {
-	return &ArmorReader{r: r}
+	return &ArmorReader{r: armor.NewReader(r)}
 }
 
 // Read implements io.Reader
 func (a *ArmorReader) Read(p []byte) (int, error) {
-	if a.buf == nil {
-		if err := a.parseArmor(); err != nil {
-			return 0, err
-		}
-	}
-
-	return a.buf.Read(p)
+	return a.r.Read(p)
 }
 
-// parseArmor parses the ASCII armor and decodes the content
-func (a *ArmorReader) parseArmor() error {
-	scanner := bufio.NewScanner(a.r)
-	var inBlock bool
-	var encodedLines []string
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-
-		if line == armorHeader {
-			inBlock = true
-			continue
-		}
-
-		if line == armorFooter {
-			break
-		}
-
-		if inBlock && line != "" {
-			encodedLines = append(encodedLines, line)
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return err
-	}
-
-	// Join and decode
-	encoded := strings.Join(encodedLines, "")
-	decoded, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		return fmt.Errorf("failed to decode armor: %w", err)
-	}
-
-	a.buf = bytes.NewReader(decoded)
-	return nil
-}
-
-// IsArmored checks if data is ASCII-armored
-func IsArmored(data []byte) bool {
-	return bytes.HasPrefix(bytes.TrimSpace(data), []byte(armorHeader))
+// IsArmoredLegacy checks if data is ASCII-armored
+// Deprecated: Use IsArmored from the age package instead
+func IsArmoredLegacy(data []byte) bool {
+	return bytes.HasPrefix(bytes.TrimSpace(data), []byte("-----BEGIN AGE ENCRYPTED FILE-----"))
 }

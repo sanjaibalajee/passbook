@@ -32,19 +32,24 @@ func (a *Action) GetCommands() []*cli.Command {
 
 		// Auth commands
 		{
+			Name:   "whoami",
+			Usage:  "Show current user",
+			Action: a.WhoAmI,
+		},
+		{
 			Name:   "login",
-			Usage:  "Login with email (magic link)",
+			Usage:  "Authenticate with GitHub",
 			Action: a.Login,
 		},
 		{
 			Name:   "logout",
-			Usage:  "Logout and clear session",
+			Usage:  "Clear authentication session",
 			Action: a.Logout,
 		},
 		{
-			Name:   "whoami",
-			Usage:  "Show current user",
-			Action: a.WhoAmI,
+			Name:   "auth-status",
+			Usage:  "Show authentication status",
+			Action: a.AuthStatus,
 		},
 
 		// Credential commands
@@ -283,6 +288,7 @@ func (a *Action) GetCommands() []*cli.Command {
 					Action:    a.TeamInvite,
 					Flags: []cli.Flag{
 						&cli.StringSliceFlag{Name: "role", Aliases: []string{"r"}, Usage: "Roles to assign (dev, staging-access, prod-access, admin)"},
+						&cli.BoolFlag{Name: "skip-verify", Usage: "Skip key ownership verification"},
 					},
 				},
 				{
@@ -292,6 +298,7 @@ func (a *Action) GetCommands() []*cli.Command {
 					Action:    a.TeamRevoke,
 					Flags: []cli.Flag{
 						&cli.BoolFlag{Name: "force", Aliases: []string{"f"}, Usage: "Skip confirmation"},
+						&cli.BoolFlag{Name: "reencrypt", Usage: "Re-encrypt all secrets to remove revoked user's access"},
 					},
 				},
 				{
@@ -301,10 +308,139 @@ func (a *Action) GetCommands() []*cli.Command {
 					Action:    a.TeamGrant,
 				},
 				{
+					Name:      "ungrant",
+					Usage:     "Remove a role from a member",
+					ArgsUsage: "EMAIL ROLE",
+					Action:    a.TeamUngrant,
+				},
+				{
 					Name:      "roles",
 					Usage:     "Show a member's roles",
 					ArgsUsage: "EMAIL",
 					Action:    a.TeamRoles,
+				},
+				{
+					Name:      "verify",
+					Usage:     "Complete key ownership verification for a pending member",
+					ArgsUsage: "EMAIL RESPONSE",
+					Action:    a.TeamVerify,
+				},
+				{
+					Name:   "pending",
+					Usage:  "List pending verifications",
+					Action: a.TeamPending,
+				},
+				{
+					Name:   "join",
+					Usage:  "Join a team (verify via GitHub and generate keys)",
+					Action: a.TeamJoin,
+				},
+				{
+					Name:      "add-verified",
+					Usage:     "Add a GitHub-verified user to the team (admin only)",
+					ArgsUsage: "EMAIL PUBLIC_KEY",
+					Action:    a.TeamAddVerified,
+					Flags: []cli.Flag{
+						&cli.StringSliceFlag{Name: "role", Aliases: []string{"r"}, Usage: "Roles to assign (dev, staging-access, prod-access, admin)"},
+					},
+				},
+			},
+		},
+
+		// Key management commands
+		{
+			Name:  "key",
+			Usage: "Manage encryption keys",
+			Subcommands: []*cli.Command{
+				{
+					Name:   "show",
+					Usage:  "Show your public key",
+					Action: a.KeyShow,
+				},
+				{
+					Name:   "encrypt",
+					Usage:  "Encrypt your private key with a passphrase",
+					Action: a.KeyEncrypt,
+				},
+				{
+					Name:   "decrypt",
+					Usage:  "Remove passphrase from your private key",
+					Action: a.KeyDecrypt,
+				},
+				{
+					Name:   "change-passphrase",
+					Usage:  "Change passphrase on your private key",
+					Action: a.KeyChangePassphrase,
+				},
+			},
+		},
+
+		// Verify key ownership (for new users)
+		{
+			Name:   "verify-key",
+			Usage:  "Prove ownership of your private key (for new users)",
+			Action: a.VerifyKey,
+			Flags: []cli.Flag{
+				&cli.StringFlag{Name: "challenge-file", Usage: "File containing the encrypted challenge"},
+				&cli.StringFlag{Name: "challenge", Usage: "Base64 encoded encrypted challenge"},
+			},
+		},
+
+		// Re-encryption commands
+		{
+			Name:   "reencrypt",
+			Usage:  "Re-encrypt secrets with current recipients",
+			Action: a.ReEncryptAll,
+			Flags: []cli.Flag{
+				&cli.BoolFlag{Name: "force", Aliases: []string{"f"}, Usage: "Skip confirmation"},
+			},
+		},
+
+		// Audit commands
+		{
+			Name:  "audit",
+			Usage: "View audit logs",
+			Subcommands: []*cli.Command{
+				{
+					Name:   "log",
+					Usage:  "Show audit log entries",
+					Action: a.AuditLog,
+					Flags: []cli.Flag{
+						&cli.StringFlag{Name: "actor", Usage: "Filter by actor email"},
+						&cli.StringFlag{Name: "target", Usage: "Filter by target"},
+						&cli.StringFlag{Name: "type", Usage: "Filter by event type"},
+						&cli.StringFlag{Name: "since", Usage: "Show events since (duration or date)"},
+						&cli.IntFlag{Name: "limit", Aliases: []string{"n"}, Value: 50, Usage: "Max events to show"},
+					},
+				},
+				{
+					Name:   "stats",
+					Usage:  "Show audit statistics",
+					Action: a.AuditStats,
+				},
+			},
+		},
+
+		// Secret rotation commands
+		{
+			Name:  "rotate",
+			Usage: "Secret rotation and security incident response",
+			Subcommands: []*cli.Command{
+				{
+					Name:   "help",
+					Usage:  "Show rotation guidance",
+					Action: a.RotateSecrets,
+					Flags: []cli.Flag{
+						&cli.BoolFlag{Name: "after-revoke", Usage: "Show checklist after revoking a user"},
+						&cli.StringFlag{Name: "user", Usage: "Email of revoked user"},
+						&cli.BoolFlag{Name: "clean-history", Usage: "Clean git history (dangerous)"},
+					},
+				},
+				{
+					Name:      "exposed",
+					Usage:     "List secrets potentially exposed to a user",
+					ArgsUsage: "EMAIL",
+					Action:    a.ListExposedSecrets,
 				},
 			},
 		},
